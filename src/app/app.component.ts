@@ -1,3 +1,4 @@
+import { saveAs } from 'file-saver';
 import {AfterViewInit, Component, ElementRef, EventEmitter, OnInit, Output, ViewChild} from '@angular/core';
 import WebViewer, {WebViewerInstance} from "@pdftron/webviewer";
 import {Subject} from "rxjs";
@@ -23,36 +24,46 @@ export class AppComponent implements AfterViewInit {
   ngAfterViewInit(): void {
 
     WebViewer({
-      path: '../lib',
-      initialDoc: '../files/webviewer-demo-annotated.pdf',
-      licenseKey: 'your_license_key'  // sign up to get a free trial key at https://dev.apryse.com
-    }, this.viewer.nativeElement).then(instance => {
-      this.wvInstance = instance;
+      path: '../lib/',
+      fullAPI: true,
+      initialDoc: '../files/file.docx',
+      loadAsPDF: true,
+      licenseKey: 'demo:1684117218449:7daeec5f0300000000b410c2b2824e02d7e6f8d95281e6b48e2ea17c44'  // sign up to get a free trial key at https://dev.apryse.com
+    }, this.viewer.nativeElement).then(async(instance) => {
+  
+      const {Core} = instance;
 
-      this.coreControlsEvent.emit(instance.UI.LayoutMode.Single);
+      const { documentViewer, annotationManager, Search, PDFNet } = Core;
+      await PDFNet.initialize();
 
-      const { documentViewer, Annotations, annotationManager } = instance.Core;
-
-      instance.UI.openElements(['notesPanel']);
-
-      documentViewer.addEventListener('annotationsLoaded', () => {
-        console.log('annotations loaded');
+      documentViewer.addEventListener('documentLoaded', async () => {
+        const doc = await documentViewer.getDocument();
+        const xfdfString = await annotationManager.exportAnnotations();
+        const options = { xfdfString, flatten: true };
+        const data = await doc.getFileData(options);
+        const arr = new Uint8Array(data);
+        const blob = new Blob([arr], { type: 'application/pdf' });
+        saveAs(blob, 'converted.pdf');
+        const page = await (await doc.getPDFDoc()).getPage(1);
+        const txt = await PDFNet.TextExtractor.create();
+        
+        txt.begin(page); // You should begin text extraction for a specific page
+        
+        let line = await txt.getFirstLine();
+        console.log("line", line);
+        let word = await line.getFirstWord();
+        console.log("Word", word);
+        let sty = await word.getStyle();
+        console.log("Style",sty);
+        let fontName = await sty.getFontName();
+        let fontSize = await sty.getFontSize();
+        
+        console.log("Font Name:", fontName);
+        console.log("Font Size:", fontSize);
+        
+        // Make sure to clean up resources
+        txt.destroy();
       });
-
-      documentViewer.addEventListener('documentLoaded', () => {
-        this.documentLoaded$.next();
-        const rectangleAnnot = new Annotations.RectangleAnnotation({
-          PageNumber: 1,
-          // values are in page coordinates with (0, 0) in the top left
-          X: 100,
-          Y: 150,
-          Width: 200,
-          Height: 50,
-          Author: annotationManager.getCurrentUser()
-        });
-        annotationManager.addAnnotation(rectangleAnnot);
-        annotationManager.redrawAnnotation(rectangleAnnot);
-      });
-    })
+    });   
   }
 }
